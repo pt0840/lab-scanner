@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>สแกน QR · บันทึกเครื่องมือ</title>
+<!--
+  หน้าสแกน QR แบบสด (ทางสำรอง) — โฮสต์นอก Google Apps Script เช่น GitHub Pages
+  เพราะ Google อาจบล็อกกล้องในหน้า Apps Script (iframe)
+  การทำงาน: สแกน QR → กลับไปที่แอป (?inst= หรือ ?code=) พร้อมเลือกเครื่องมือให้อัตโนมัติ
+  เปิดจากแอปด้วย:  scanner.html?app=<URL ของ Web App /exec>
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,0&display=block" rel="stylesheet">
+<style>
+:root{--pri:#006A6A;--on-pri:#fff;--pri-c:#B3EEEC;--on-pri-c:#002020;--sec-c:#CCE8E6;--on-sec-c:#051F1F;--ter-c:#D3E4FF;--on-ter-c:#0B1D33;
+  --err:#BA1A1A;--err-c:#FFDAD6;--surf:#F4FBFA;--sc-low:#EEF5F4;--sc-lowest:#fff;--on-surf:#161D1D;--on-surf-v:#3F4948;--outline:#6F7979;--outline-v:#BEC8C8}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{font-family:'Noto Sans Thai',system-ui,sans-serif;background:var(--surf);color:var(--on-surf)}
+[hidden]{display:none!important}
+.ms{font-family:'Material Symbols Rounded';font-size:22px;line-height:1;display:inline-block;width:1em;height:1em;overflow:hidden;vertical-align:middle;font-style:normal;font-weight:normal;white-space:nowrap;direction:ltr}
+.page{max-width:480px;margin:0 auto;padding:calc(24px + env(safe-area-inset-top)) 16px 32px}
+.hero{width:64px;height:64px;border-radius:20px;background:var(--pri-c);color:var(--on-pri-c);display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.hero .ms{font-size:34px} .hero.err{background:var(--err-c);color:var(--err)}
+h1{font-size:24px;margin:0 0 6px} .sub{color:var(--on-surf-v);font-size:14px;margin:0 0 16px;line-height:1.5}
+.step{display:flex;gap:12px;padding:10px 0;font-size:14px;line-height:1.5}
+.step .n{flex:0 0 26px;height:26px;border-radius:50%;background:var(--sec-c);color:var(--on-sec-c);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:52px;margin-top:12px;border:0;border-radius:999px;padding:0 24px;
+  font:inherit;font-size:16px;font-weight:600;color:var(--on-pri);background:var(--pri);cursor:pointer;text-decoration:none}
+.btn.outline{background:transparent;color:var(--pri);border:1px solid var(--outline);font-size:14px;min-height:46px}
+.btn.ghost{background:var(--sec-c);color:var(--on-sec-c);font-size:14px;min-height:46px}
+.row{display:flex;gap:8px} .row .btn{flex:1}
+.callout{display:flex;gap:10px;padding:12px 14px;border-radius:12px;background:var(--ter-c);color:var(--on-ter-c);font-size:13px;line-height:1.5;margin:14px 0}
+.callout.warn{background:#FFE6C2;color:#4A2800}
+.result{margin-top:14px;padding:14px;border-radius:12px;background:var(--sc-lowest);border:1px solid var(--outline-v);word-break:break-all;font-family:monospace}
+.guide-t{font-weight:600;margin-top:12px}
+/* scanner */
+.scanner{position:fixed;inset:0;z-index:10;background:#000;color:#fff;overflow:hidden}
+.scanner video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mask{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.frame{position:relative;width:min(72vw,300px);aspect-ratio:1;border-radius:28px;box-shadow:0 0 0 100vmax rgba(0,0,0,.55)}
+.frame i{position:absolute;width:42px;height:42px;border:4px solid #fff}
+.frame i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0;border-top-left-radius:28px}
+.frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0;border-top-right-radius:28px}
+.frame i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0;border-bottom-left-radius:28px}
+.frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0;border-bottom-right-radius:28px}
+.line{position:absolute;left:10%;right:10%;height:2px;top:12%;background:#7EF0E8;box-shadow:0 0 12px #7EF0E8;animation:l 2.2s ease-in-out infinite}
+@keyframes l{0%,100%{top:12%}50%{top:86%}}
+.frame.found i{border-color:#7EE2A0} .frame.found .line{display:none}
+.top{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:8px;padding:calc(12px + env(safe-area-inset-top)) 12px 12px;background:linear-gradient(rgba(0,0,0,.55),transparent)}
+.top .t{flex:1;font-size:17px;font-weight:600}
+.ic{flex:0 0 48px;height:48px;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ic.on{background:#fff;color:#000}
+.bottom{position:absolute;left:0;right:0;bottom:0;padding:16px 16px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:14px;background:linear-gradient(transparent,rgba(0,0,0,.65))}
+.status{padding:10px 16px;border-radius:999px;background:rgba(0,0,0,.55);font-size:14px;text-align:center}
+.status.bad{background:rgba(186,26,26,.9)} .status.ok{background:rgba(46,107,58,.95)}
+.chip{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 18px;border:1px solid rgba(255,255,255,.4);border-radius:999px;background:rgba(0,0,0,.35);color:#fff;font:inherit;font-size:14px;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="page" id="intro">
+  <div class="hero"><span class="ms">qr_code_scanner</span></div>
+  <h1>สแกน QR เครื่องมือ</h1>
+  <p class="sub">ใช้กล้องหลังอ่าน QR บนเครื่องมือ แล้วกลับไปหน้าบันทึกพร้อมเลือกเครื่องให้อัตโนมัติ — ไม่มีการบันทึกหรือส่งภาพออกจากโทรศัพท์</p>
+  <div class="step"><span class="n">1</span><div>กด <b>เริ่มสแกน</b></div></div>
+  <div class="step"><span class="n">2</span><div id="hint"></div></div>
+  <div class="step"><span class="n">3</span><div>เล็ง QR ให้อยู่ในกรอบ</div></div>
+  <div class="callout warn" id="inappWarn" hidden><span class="ms">warning</span><div id="inappTxt"></div></div>
+  <button class="btn" id="start" type="button"><span class="ms">photo_camera</span>เริ่มสแกน</button>
+  <div class="row"><button class="btn outline" id="photo" type="button"><span class="ms">add_a_photo</span>ถ่ายภาพแทน</button>
+    <a class="btn outline" id="back" hidden><span class="ms">arrow_back</span>กลับไปแอป</a></div>
+  <div id="res" class="result" hidden></div>
+</div>
+
+<div class="page" id="fail" hidden>
+  <div class="hero err"><span class="ms" id="fIcon">no_photography</span></div>
+  <h1 id="fTitle"></h1><p class="sub" id="fSub"></p>
+  <div class="guide-t" id="gTitle"></div><div id="gSteps"></div>
+  <button class="btn" id="retry" type="button"><span class="ms">refresh</span>ลองอีกครั้ง</button>
+  <div class="row"><button class="btn outline" id="photo2" type="button"><span class="ms">add_a_photo</span>ถ่ายภาพ QR</button>
+    <a class="btn outline" id="back2" hidden><span class="ms">arrow_back</span>กลับไปแอป</a></div>
+</div>
+
+<div class="scanner" id="scanner" hidden>
+  <video id="v" playsinline webkit-playsinline muted autoplay></video>
+  <div class="mask"><div class="frame" id="frame"><i></i><i></i><i></i><i></i><div class="line"></div></div></div>
+  <div class="top"><button class="ic" id="close" type="button"><span class="ms">close</span></button><div class="t">สแกน QR เครื่องมือ</div>
+    <button class="ic" id="torch" type="button" hidden><span class="ms">flashlight_on</span></button>
+    <button class="ic" id="switch" type="button" hidden><span class="ms">cameraswitch</span></button></div>
+  <div class="bottom"><div class="status" id="status">กำลังเปิดกล้อง…</div>
+    <button class="chip" id="photo3" type="button"><span class="ms">photo_camera</span>ถ่ายภาพแทน</button></div>
+</div>
+<input type="file" id="file" accept="image/*" capture="environment" hidden>
+
+<script>
+const $ = s => document.querySelector(s);
+const APP_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+\/|macros\/)s\/[\w-]+\/(exec|dev)$/;
+const qs = new URLSearchParams(location.search);
+const APP = APP_RE.test(qs.get('app') || '') ? qs.get('app') : '';
+const JSQR = ['https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js', 'https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js'];
+const SC = { stream:null, track:null, timer:null, active:false, detector:null, devices:[], idx:0, torch:false, last:'', lastAt:0, cv:null, cx:null, t0:0, audio:null };
+const store = { get(k){ try{ return localStorage.getItem(k) || ''; }catch(e){ return ''; } }, set(k,v){ try{ v ? localStorage.setItem(k,v) : localStorage.removeItem(k); }catch(e){} } };
+
+function platform(){
+  const ua = navigator.userAgent || '';
+  const ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const android = /Android/i.test(ua);
+  const inapp = /\bLine\/|FBAN|FBAV|FB_IAB|Instagram|MicroMessenger|TikTok|musical_ly|BytedanceWebview/i.test(ua);
+  let b = 'other';
+  if(/SamsungBrowser/i.test(ua)) b = 'samsung'; else if(/HuaweiBrowser|HMSCore/i.test(ua)) b = 'huawei';
+  else if(/MiuiBrowser|XiaoMi\//i.test(ua)) b = 'miui'; else if(/OPR\/|OPT\/|Opera/i.test(ua)) b = 'opera';
+  else if(/EdgiOS|EdgA|Edg\//i.test(ua)) b = 'edge'; else if(/FxiOS|Firefox/i.test(ua)) b = 'firefox';
+  else if(/CriOS|Chrome\//i.test(ua)) b = 'chrome'; else if(/Safari/i.test(ua)) b = 'safari';
+  return { ios, android, inapp, browser:b };
+}
+const BN = { chrome:'Chrome', edge:'Edge', firefox:'Firefox', opera:'Opera', samsung:'Samsung Internet', huawei:'Huawei Browser', miui:'Mi Browser', safari:'Safari', other:'Chrome' };
+function guide(p){
+  const host = location.hostname;
+  if(p.inapp) return ['เปิดลิงก์ในเบราว์เซอร์ก่อน', ['แอป LINE / Facebook / Instagram มักไม่อนุญาตให้เว็บใช้กล้อง',
+    p.ios ? 'แตะ <b>⋯</b> หรือไอคอนแชร์ → <b>เปิดใน Safari</b>' : 'แตะ <b>⋮</b> → <b>เปิดในเบราว์เซอร์</b> / <b>เปิดด้วย Chrome</b>']];
+  if(p.ios && p.browser === 'safari') return ['iPhone / iPad · Safari', [
+    'แตะ <b>aA</b> (หรือ <b>⋯</b>) ด้านซ้ายของช่องที่อยู่เว็บ → <b>การตั้งค่าเว็บไซต์</b> → <b>กล้อง</b> → <b>อนุญาต</b>',
+    'ถ้ายังไม่ได้: <b>การตั้งค่า</b> → <b>แอป</b> → <b>Safari</b> → <b>กล้อง</b> → <b>ถาม</b>/<b>อนุญาต</b> (iOS 17 ลงไป: การตั้งค่า → Safari → กล้อง)',
+    'ตรวจ <b>เวลาหน้าจอ → ข้อจำกัดเนื้อหาและความเป็นส่วนตัว</b> ว่าไม่ได้ปิดกล้องไว้']];
+  if(p.ios) return [`iPhone / iPad · ${BN[p.browser]}`, [
+    `<b>การตั้งค่า</b> → <b>แอป</b> → <b>${BN[p.browser]}</b> → เปิดสวิตช์ <b>กล้อง</b>`, 'กลับมากดลองอีกครั้ง แล้วแตะ <b>อนุญาต</b>', 'หรือเปิดหน้านี้ใน Safari']];
+  if(p.android && p.browser === 'samsung') return ['Android · Samsung Internet', [
+    'แตะ <b>แม่กุญแจ</b> ข้างที่อยู่เว็บ → <b>สิทธิ์</b> → <b>กล้อง</b> → อนุญาต',
+    'หรือ <b>≡</b> → <b>การตั้งค่า</b> → <b>เว็บไซต์และการดาวน์โหลด</b> → <b>สิทธิ์ของไซต์</b> → <b>กล้อง</b>',
+    '<b>การตั้งค่า</b> เครื่อง → <b>แอปพลิเคชัน</b> → <b>Samsung Internet</b> → <b>การอนุญาต</b> → <b>กล้อง</b> → อนุญาตเฉพาะขณะใช้แอป']];
+  if(p.android) return [`Android · ${BN[p.browser]}`, [
+    'แตะไอคอน <b>ตัวปรับ</b>/<b>แม่กุญแจ</b> ด้านซ้ายของที่อยู่เว็บ → <b>สิทธิ์</b> → <b>กล้อง</b> → <b>อนุญาต</b>',
+    `หรือ <b>⋮</b> → <b>การตั้งค่า</b> → <b>การตั้งค่าเว็บไซต์</b> → <b>กล้อง</b> → เอา ${host} ออกจาก <b>บล็อก</b>`,
+    `<b>การตั้งค่า</b> เครื่อง → <b>แอป</b> → <b>${BN[p.browser]}</b> → <b>สิทธิ์</b> → <b>กล้อง</b> → <b>อนุญาตเฉพาะขณะใช้แอป</b>`]];
+  return ['คอมพิวเตอร์', ['คลิกไอคอนแม่กุญแจข้างที่อยู่เว็บ → กล้อง → อนุญาต', 'ตรวจว่ากล้องไม่ได้ถูกโปรแกรมอื่นใช้งาน']];
+}
+
+function loadJsQR(){
+  if(window.jsQR) return Promise.resolve();
+  return (async () => { for(const src of JSQR){ try{ await new Promise((r, j) => { const s = document.createElement('script'); s.src = src; s.onload = r; s.onerror = j; document.head.appendChild(s); }); if(window.jsQR) return; }catch(e){} }
+    throw Object.assign(new Error('โหลดตัวอ่าน QR ไม่สำเร็จ — ตรวจสอบอินเทอร์เน็ต'), { name:'LibError' }); })();
+}
+async function permState(){ try{ return (await navigator.permissions.query({ name:'camera' })).state; }catch(e){ return 'unknown'; } }
+function status(t, bad, ok){ const s = $('#status'); s.textContent = t; s.className = 'status' + (bad ? ' bad' : ok ? ' ok' : ''); }
+
+async function open(deviceId){
+  try{ if(!SC.audio){ const AC = window.AudioContext || window.webkitAudioContext; if(AC) SC.audio = new AC(); } }catch(e){}
+  if(!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return showFail('unsupported');
+  $('#scanner').hidden = false; $('#frame').classList.remove('found'); status('กำลังเปิดกล้อง…');
+  loadJsQR().catch(() => {});
+  const t0 = Date.now();
+  try{
+    stop();
+    const tries = deviceId ? [{ video:{ deviceId:{ exact:deviceId } }, audio:false }]
+      : [{ video:{ facingMode:{ ideal:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false }, { video:{ facingMode:'environment' }, audio:false }, { video:true, audio:false }];
+    let err;
+    for(const c of tries){ try{ SC.stream = await navigator.mediaDevices.getUserMedia(c); break; }catch(e){ err = e; if(/NotAllowed|PermissionDenied|Security/.test(e.name)) throw e; } }
+    if(!SC.stream) throw err;
+    SC.track = SC.stream.getVideoTracks()[0];
+    const v = $('#v'); v.muted = true; v.srcObject = SC.stream; try{ await v.play(); }catch(e){}
+    store.set('scan_cam', '1');
+    try{ SC.devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); }catch(e){ SC.devices = []; }
+    const cur = SC.track.getSettings ? SC.track.getSettings().deviceId : '';
+    SC.idx = Math.max(0, SC.devices.findIndex(d => d.deviceId === cur)); $('#switch').hidden = SC.devices.length < 2;
+    let caps = {}; try{ caps = SC.track.getCapabilities ? SC.track.getCapabilities() : {}; }catch(e){}
+    SC.torch = false; $('#torch').hidden = !caps.torch; $('#torch').classList.remove('on');
+    try{ if(caps.focusMode && caps.focusMode.includes('continuous')) await SC.track.applyConstraints({ advanced:[{ focusMode:'continuous' }] }); }catch(e){}
+    SC.detector = null;
+    if('BarcodeDetector' in window){ try{ const f = await BarcodeDetector.getSupportedFormats(); if(f.includes('qr_code')) SC.detector = new BarcodeDetector({ formats:['qr_code'] }); }catch(e){} }
+    if(!SC.detector) await loadJsQR();
+    status('เล็ง QR บนเครื่องมือให้อยู่ในกรอบ'); SC.active = true; SC.t0 = Date.now(); SC.last = ''; tick();
+  }catch(e){
+    const fast = Date.now() - t0 < 450; close();
+    const n = (e && e.name) || '';
+    if(/NotAllowed|PermissionDenied|Security/.test(n)){ store.set('scan_cam', ''); const st = await permState(); showFail(fast && st !== 'denied' ? 'blocked' : 'denied'); }
+    else if(/NotFound|DevicesNotFound|Overconstrained/.test(n)) showFail('nocam');
+    else if(/NotReadable|TrackStart|Abort/.test(n)) showFail('busy');
+    else if(n === 'TypeError' || /NotSupported/.test(n)) showFail('unsupported');
+    else showFail('error', e);
+  }
+}
+function stop(){ SC.active = false; clearTimeout(SC.timer); if(SC.stream) SC.stream.getTracks().forEach(t => t.stop()); SC.stream = null; SC.track = null; $('#v').srcObject = null; }
+function close(){ stop(); $('#scanner').hidden = true; }
+
+async function tick(){
+  if(!SC.active) return;
+  const v = $('#v'); let text = null;
+  try{
+    if(v.readyState >= 2 && v.videoWidth){
+      if(SC.detector){ try{ const r = await SC.detector.detect(v); if(r.length) text = r[0].rawValue; }catch(e){ SC.detector = null; await loadJsQR(); } }
+      else if(window.jsQR){
+        const k = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight)), w = Math.round(v.videoWidth * k), h = Math.round(v.videoHeight * k);
+        if(!SC.cv){ SC.cv = document.createElement('canvas'); SC.cx = SC.cv.getContext('2d', { willReadFrequently:true }); }
+        SC.cv.width = w; SC.cv.height = h; SC.cx.drawImage(v, 0, 0, w, h);
+        const r = jsQR(SC.cx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts:'dontInvert' }); if(r && r.data) text = r.data;
+      }
+    }
+  }catch(e){}
+  if(!SC.active) return;
+  if(text && !(text === SC.last && Date.now() - SC.lastAt < 2500)){ SC.last = text; SC.lastAt = Date.now(); return found(text); }
+  if(Date.now() - SC.t0 > 15000 && !SC.hinted){ SC.hinted = true; status('ยังอ่านไม่ได้ — ขยับให้ใกล้ขึ้น หรือกด “ถ่ายภาพแทน”'); }
+  SC.timer = setTimeout(tick, SC.detector ? 150 : 110);
+}
+
+/** ส่งผลกลับไปที่แอป */
+function targetFor(text){
+  try{ const u = new URL(text); if(APP_RE.test(u.origin + u.pathname) && (u.searchParams.get('inst') || u.searchParams.get('code'))) return u.href; }catch(e){}
+  return APP ? APP + '?code=' + encodeURIComponent(text) : '';
+}
+function found(text){
+  SC.active = false; $('#frame').classList.add('found'); status('อ่าน QR สำเร็จ', false, true);
+  try{ navigator.vibrate && navigator.vibrate([30, 40, 30]); }catch(e){}
+  try{ const a = SC.audio, o = a.createOscillator(), g = a.createGain(); o.frequency.value = 1180; g.gain.value = .08; o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + .09); }catch(e){}
+  const go = targetFor(text);
+  setTimeout(() => {
+    close();
+    if(go){ location.href = go; return; }
+    $('#res').hidden = false; $('#res').textContent = text;   // เปิดหน้านี้ตรง ๆ โดยไม่มี ?app= → แสดงข้อความที่อ่านได้
+  }, 450);
+}
+
+function showFail(kind, err){
+  const p = platform(), [gt, gs] = guide(p);
+  const M = { blocked:['no_photography','เปิดกล้องไม่ได้','เบราว์เซอร์ไม่อนุญาตให้ใช้กล้อง (อาจเคยกด “ไม่อนุญาต” ไว้) — ทำตามขั้นตอนด้านล่าง หรือถ่ายภาพ QR แทน'],
+    denied:['no_photography','ยังไม่ได้รับอนุญาตให้ใช้กล้อง','เปิดสิทธิ์กล้องตามขั้นตอนด้านล่าง แล้วกด “ลองอีกครั้ง”'],
+    nocam:['videocam_off','ไม่พบกล้องบนอุปกรณ์นี้','ใช้การถ่ายภาพ QR แทน'],
+    busy:['videocam_off','กล้องถูกใช้งานโดยแอปอื่น','ปิดแอปกล้อง/วิดีโอคอล หรือแท็บอื่นที่ใช้กล้อง แล้วลองอีกครั้ง'],
+    unsupported:['browser_not_supported','เบราว์เซอร์นี้สแกนสดไม่ได้', p.inapp ? 'ให้เปิดลิงก์นี้ใน Safari หรือ Chrome' : 'ลองอัปเดตเบราว์เซอร์ หรือถ่ายภาพ QR แทน'],
+    error:['error','เปิดกล้องไม่สำเร็จ', (err && err.message) || 'ลองอีกครั้ง หรือถ่ายภาพ QR แทน'] }[kind];
+  $('#fIcon').textContent = M[0]; $('#fTitle').textContent = M[1]; $('#fSub').textContent = M[2];
+  $('#gTitle').textContent = 'วิธีเปิดสิทธิ์กล้อง · ' + gt;
+  $('#gSteps').innerHTML = gs.map((s, i) => `<div class="step"><span class="n">${i+1}</span><div>${s}</div></div>`).join('');
+  $('#intro').hidden = true; $('#fail').hidden = false;
+}
+
+async function decodePhoto(file){
+  let src; try{ src = await createImageBitmap(file); }catch(e){ src = await new Promise((r, j) => { const im = new Image(); im.onload = () => r(im); im.onerror = j; im.src = URL.createObjectURL(file); }); }
+  if('BarcodeDetector' in window){ try{ const r = await new BarcodeDetector({ formats:['qr_code'] }).detect(src); if(r.length) return r[0].rawValue; }catch(e){} }
+  await loadJsQR();
+  const W = src.width, H = src.height, c = document.createElement('canvas'), x = c.getContext('2d', { willReadFrequently:true });
+  for(const [max, crop] of [[1024,1],[1600,1],[1024,.6],[900,.4]]){
+    const cw = W*crop, ch = H*crop, k = Math.min(1, max/Math.max(cw, ch)), w = Math.round(cw*k), h = Math.round(ch*k);
+    c.width = w; c.height = h; x.drawImage(src, (W-cw)/2, (H-ch)/2, cw, ch, 0, 0, w, h);
+    const r = jsQR(x.getImageData(0, 0, w, h).data, w, h, { inversionAttempts:'attemptBoth' }); if(r && r.data) return r.data;
+  }
+  return null;
+}
+function pickPhoto(){ close(); $('#file').click(); }
+
+// ---------- init ----------
+(async () => {
+  const p = platform();
+  $('#hint').innerHTML = p.ios ? 'มีกล่องถาม <b>ต้องการใช้กล้อง</b> ให้แตะ <b>อนุญาต</b>'
+    : p.android ? 'มีกล่องถามสิทธิ์ ให้แตะ <b>อนุญาต</b> / <b>ขณะใช้แอป</b> (บางรุ่นถาม 2 ครั้ง ให้อนุญาตทั้งสองครั้ง)' : 'คลิก <b>อนุญาต</b> เมื่อเบราว์เซอร์ถามสิทธิ์กล้อง';
+  if(p.inapp){ $('#inappWarn').hidden = false; $('#inappTxt').innerHTML = `เปิดผ่านแอป LINE / Facebook มักใช้กล้องไม่ได้ — ${p.ios ? 'แตะ ⋯ → เปิดใน Safari' : 'แตะ ⋮ → เปิดในเบราว์เซอร์'}`; }
+  if(APP){ ['#back','#back2'].forEach(s => { $(s).hidden = false; $(s).href = APP; }); }
+  $('#start').onclick = () => open();
+  $('#retry').onclick = () => { $('#fail').hidden = true; $('#intro').hidden = false; open(); };
+  $('#close').onclick = close;
+  ['#photo','#photo2','#photo3'].forEach(s => $(s).onclick = pickPhoto);
+  $('#torch').onclick = async () => { try{ SC.torch = !SC.torch; await SC.track.applyConstraints({ advanced:[{ torch:SC.torch }] }); }catch(e){ SC.torch = false; } $('#torch').classList.toggle('on', SC.torch); };
+  $('#switch').onclick = () => { if(SC.devices.length > 1){ SC.idx = (SC.idx + 1) % SC.devices.length; open(SC.devices[SC.idx].deviceId); } };
+  $('#file').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ''; if(!f) return;
+    try{ const t = await decodePhoto(f); if(!t){ alert('อ่าน QR ในภาพไม่ได้ — ถ่ายให้ใกล้ ชัด และไม่สะท้อนแสง'); return; } found(t); }catch(err){ alert(err.message || err); }
+  };
+  document.addEventListener('visibilitychange', () => { if(!$('#scanner').hidden){ if(document.hidden) stop(); else open(); } });
+  if((await permState()) === 'granted' || store.get('scan_cam') === '1') open();   // เคยอนุญาตแล้ว → เปิดกล้องทันที
+})();
+</script>
+</body>
+</html>
