@@ -20,82 +20,114 @@
   Nothing is uploaded — frames are decoded on the phone only.
 -->
 <style>
-  :root { --primary: #db0862; --primary-2: #f51b70; }
+  /* Same look as the equipment scanner (สแกน QR เครื่องมือ); accent = stock app pink */
+  :root { --accent: #f51b70; --accent-dark: #db0862; --muted: #a1a1aa; --corner: #8e8e93; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #000; color: #fff;
     font-family: 'Sarabun', -apple-system, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
-  body { display: flex; flex-direction: column; min-height: 100dvh; overflow: hidden; }
-  header { display: flex; align-items: center; gap: 10px;
-    padding: calc(12px + env(safe-area-inset-top)) 16px 12px; background: rgba(0,0,0,.6); z-index: 3; }
-  header a { color: #fff; text-decoration: none; font-size: 15px; font-weight: 600;
-    padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,.14); }
-  header h1 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; text-align: center; }
-  .spacer { width: 64px; }
-  .stage { position: relative; flex: 1; overflow: hidden; }
-  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .frame { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
-  .frame span { position: relative; width: min(70vw, 300px); aspect-ratio: 1; border-radius: 22px;
-    border: 3px solid rgba(255,255,255,.95); box-shadow: 0 0 0 9999px rgba(0,0,0,.45); }
-  .frame span::after { content: ''; position: absolute; left: 8%; right: 8%; height: 2px; top: 6%;
-    background: var(--primary-2); box-shadow: 0 0 12px var(--primary-2); animation: sweep 1.8s ease-in-out infinite; }
-  @keyframes sweep { 0%,100% { top: 6%; } 50% { top: 94%; } }
-  .frame.found span { border-color: #4ade80; }
-  .msg { position: absolute; left: 16px; right: 16px; bottom: 18px; text-align: center; font-size: 15px; font-weight: 600;
-    text-shadow: 0 1px 4px rgba(0,0,0,.8); line-height: 1.5; }
-  .start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 14px; padding: 24px; text-align: center; background: #111; z-index: 2; }
-  .start p { margin: 0; color: #cfcfd4; font-size: 14.5px; line-height: 1.6; max-width: 340px; }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 12px 22px;
-    border-radius: 26px; border: none; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer;
-    background: var(--primary); color: #fff; text-decoration: none; }
-  .btn.ghost { background: rgba(255,255,255,.14); }
-  .btn:active { transform: scale(.97); }
-  footer { display: flex; gap: 10px; padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); background: rgba(0,0,0,.6); z-index: 3; }
-  footer .btn { flex: 1; font-size: 15px; min-height: 46px; padding: 10px 12px; }
-  .manual { display: none; gap: 8px; padding: 0 16px 12px; background: rgba(0,0,0,.6); }
-  .manual.show { display: flex; }
-  .manual input { flex: 1; min-width: 0; min-height: 46px; border-radius: 14px; border: 1px solid #555; background: #1c1c1f;
+  body { min-height: 100dvh; overflow: hidden; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+  .shade { position: fixed; inset: 0; background: rgba(0,0,0,.28); pointer-events: none; }
+
+  /* Top bar: round close button + title, left aligned */
+  .top { position: fixed; top: 0; left: 0; right: 0; z-index: 5; display: flex; align-items: center; gap: 14px;
+    padding: calc(14px + env(safe-area-inset-top)) 16px 10px; }
+  .close { width: 52px; height: 52px; border-radius: 50%; background: rgba(28,28,30,.85); border: none;
+    display: inline-flex; align-items: center; justify-content: center; color: #d4d4d8; text-decoration: none; flex-shrink: 0; }
+  .close svg { width: 22px; height: 22px; }
+  .top h1 { margin: 0; font-size: 19px; font-weight: 700; color: #d4d4d8; text-shadow: 0 1px 4px rgba(0,0,0,.6); }
+
+  /* Scan area: four corner brackets + sweeping line */
+  .center { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 28px; padding: 90px 20px calc(30px + env(safe-area-inset-bottom)); pointer-events: none; z-index: 2; }
+  .frame { position: relative; width: min(72vw, 300px); aspect-ratio: 1; }
+  .frame i { position: absolute; width: 22%; height: 22%; border: 3px solid var(--corner); transition: border-color .2s; }
+  .frame i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 22px; }
+  .frame i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 22px; }
+  .frame i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 22px; }
+  .frame i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 22px; }
+  .frame b { position: absolute; left: 10%; right: 10%; height: 2px; top: 14%; border-radius: 2px;
+    background: var(--accent); box-shadow: 0 0 14px var(--accent); animation: sweep 2s ease-in-out infinite; }
+  @keyframes sweep { 0%,100% { top: 14%; } 50% { top: 86%; } }
+  .frame.live i { border-color: #fff; }
+  .frame.found i { border-color: #4ade80; }
+  .frame.found b { animation: none; opacity: 0; }
+
+  .msg { max-width: 330px; text-align: center; font-size: 15px; color: var(--muted); line-height: 1.55;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8); min-height: 1.5em; }
+  .msg.ok { color: #86efac; } .msg.err { color: #fca5a5; }
+
+  .actions { display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: auto; }
+  .pill { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 12px 26px;
+    border-radius: 30px; border: 1.5px solid #52525b; background: rgba(0,0,0,.35); color: #d4d4d8;
+    font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .pill svg { width: 22px; height: 22px; }
+  .pill.primary { background: var(--accent-dark); border-color: var(--accent-dark); color: #fff; }
+  .pill:active { transform: scale(.97); }
+  .link { background: none; border: none; color: #71717a; font: inherit; font-size: 14px; padding: 6px 10px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+  /* Bottom sheets: type a code / set the app link */
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: none; flex-direction: column; gap: 10px;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); background: #1c1c1e; border-radius: 22px 22px 0 0; }
+  .sheet.show { display: flex; }
+  .sheet .row { display: flex; gap: 8px; }
+  .sheet input { flex: 1; min-width: 0; min-height: 48px; border-radius: 14px; border: 1px solid #3f3f46; background: #0f0f10;
     color: #fff; padding: 0 14px; font: inherit; font-size: 16px; }
-  .err { color: #fca5a5; }
-  .diag { margin-top: 6px; font-size: 11.5px; color: #8b8b93; word-break: break-all; }
-  .start .btn.ghost { min-height: 44px; font-size: 15px; }
+  .sheet .pill { min-height: 48px; padding: 10px 20px; }
+  .sheet p { margin: 0; font-size: 14px; line-height: 1.5; color: #d4d4d8; }
+  .diag { font-size: 11.5px; color: #71717a; word-break: break-all; text-align: center; max-width: 340px; }
+
+  /* Shown before the camera starts / when it can't start */
+  .start { position: fixed; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; padding: 100px 28px 40px; text-align: center; background: #000; }
+  .start p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.6; max-width: 340px; }
 </style>
 </head>
 <body>
-<header>
-  <a id="backLink" href="#">‹ กลับ</a>
-  <h1>สแกน QR วัสดุ</h1>
-  <span class="spacer"></span>
-</header>
+<video id="video" playsinline muted autoplay></video>
+<div class="shade"></div>
 
-<div class="stage">
-  <video id="video" playsinline muted autoplay></video>
-  <div class="frame" id="frame"><span></span></div>
-  <div class="msg" id="msg">เล็ง QR Code ให้อยู่ในกรอบ ระบบจะอ่านอัตโนมัติ</div>
-  <div class="start" id="startPanel">
-    <p id="startText">แตะ "เริ่มสแกน" แล้วอนุญาตให้ใช้กล้อง<br>ไม่มีการบันทึกหรือส่งภาพออกจากโทรศัพท์</p>
-    <button class="btn" id="startBtn" type="button">เริ่มสแกน</button>
-    <button class="btn ghost" id="copyBtn" type="button" style="display:none;">คัดลอกลิงก์ไปเปิดใน Safari / Chrome</button>
-    <div class="diag" id="diag"></div>
+<div class="top">
+  <a class="close" id="backLink" href="#" aria-label="ปิด">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+  </a>
+  <h1>สแกน QR วัสดุ</h1>
+</div>
+
+<div class="center">
+  <div class="frame" id="frame"><i></i><i></i><i></i><i></i><b></b></div>
+  <div class="msg" id="msg">กำลังเปิดกล้อง…</div>
+  <div class="actions">
+    <button class="pill" id="photoBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      ถ่ายภาพแทน
+    </button>
+    <button class="link" id="manualBtn" type="button">พิมพ์รหัสแทน</button>
   </div>
 </div>
 
-<div class="manual" id="appSetup" style="flex-direction:column;">
-  <div style="font-size:14px;line-height:1.5;color:#e5e5ea;">ตั้งลิงก์แอปครั้งแรก: เปิดแอปใน Safari/Chrome แล้วคัดลอกลิงก์จากช่องที่อยู่ (ลงท้ายด้วย <b>/exec</b>) มาวางที่นี่ — ระบบจะจำไว้ในเครื่องนี้</div>
-  <div style="display:flex;gap:8px;">
+<div class="start" id="startPanel" style="display:none;">
+  <p id="startText">แตะ "เริ่มสแกน" แล้วอนุญาตให้ใช้กล้อง<br>ไม่มีการบันทึกหรือส่งภาพออกจากโทรศัพท์</p>
+  <button class="pill primary" id="startBtn" type="button">เริ่มสแกน</button>
+  <button class="pill" id="copyBtn" type="button" style="display:none;">คัดลอกลิงก์ไปเปิดใน Safari / Chrome</button>
+  <div class="diag" id="diag"></div>
+</div>
+
+<div class="sheet" id="manual">
+  <p>พิมพ์รหัสวัสดุ</p>
+  <div class="row">
+    <input id="manualCode" type="text" placeholder="เช่น 10005902-1" autocomplete="off">
+    <button class="pill primary" id="manualGo" type="button">ตกลง</button>
+  </div>
+</div>
+<div class="sheet" id="appSetup">
+  <p>ตั้งลิงก์แอปครั้งแรก: เปิดแอปใน Safari/Chrome แล้วคัดลอกลิงก์จากช่องที่อยู่ (ลงท้ายด้วย <b>/exec</b>) มาวางที่นี่ — ระบบจะจำไว้ในเครื่องนี้</p>
+  <div class="row">
     <input id="appUrlInput" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
-    <button class="btn" id="appUrlSave" type="button">บันทึก</button>
+    <button class="pill primary" id="appUrlSave" type="button">บันทึก</button>
   </div>
   <div class="diag" id="diag2"></div>
 </div>
-<div class="manual" id="manual">
-  <input id="manualCode" type="text" placeholder="พิมพ์รหัสวัสดุ" autocomplete="off">
-  <button class="btn" id="manualGo" type="button">ตกลง</button>
-</div>
-<footer>
-  <button class="btn ghost" id="photoBtn" type="button">ถ่ายภาพแทน</button>
-  <button class="btn ghost" id="manualBtn" type="button">พิมพ์รหัส</button>
-</footer>
 <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
@@ -129,9 +161,14 @@
   var $ = function (id) { return document.getElementById(id); };
   var video = $('video'), msg = $('msg');
   var backLink = $('backLink');
-  if (appUrl) backLink.href = appUrl; else backLink.style.visibility = 'hidden';
+  if (appUrl) backLink.href = appUrl;
+  backLink.addEventListener('click', function (e) {
+    var op = null; try { op = window.opener; } catch (x) {}
+    if (op && !op.closed) { e.preventDefault(); stop(); try { op.focus(); } catch (x) {} window.close(); return; }
+    if (!appUrl) { e.preventDefault(); stop(); if (history.length > 1) history.back(); }
+  });
 
-  function setMsg(text, isErr) { msg.textContent = text; msg.className = 'msg' + (isErr ? ' err' : ''); }
+  function setMsg(text, isErr) { msg.textContent = text; msg.className = 'msg' + (isErr ? ' err' : (/^อ่านได้/.test(text) ? ' ok' : '')); }
 
   // ---- Environment checks (shown on screen to make problems easy to report) ----
   var ua = navigator.userAgent || '';
@@ -185,6 +222,9 @@
     stop();
     $('frame').classList.add('found');
     if (navigator.vibrate) navigator.vibrate(80);
+    // Opened as a tab from the app: hand the code back and close — the app
+    // stays as it was (no reload, no login).
+    if (sendToOpener(code)) return;
     if (!appUrl) {
       pendingCode = code;
       setMsg('อ่านได้: ' + code + ' — ยังไม่รู้ลิงก์ของแอป กรุณาวางลิงก์แอปด้านล่างครั้งเดียว แล้วกด "บันทึก"', true);
@@ -198,12 +238,41 @@
     location.replace(appUrl + '?' + q.toString());
   }
 
+  var ackReceived = false;
+  window.addEventListener('message', function (ev) {
+    if (ev.data && ev.data.type === 'stock-scan-ack') ackReceived = true;
+  });
+  function sendToOpener(code) {
+    var op = null;
+    try { op = window.opener; } catch (e) { op = null; }
+    if (!op || op.closed) return false;
+    try { op.postMessage({ type: 'stock-scan', code: code }, '*'); } catch (e) { return false; }
+    setMsg('อ่านได้: ' + code + ' — ส่งกลับไปที่แอปแล้ว');
+    setTimeout(function () {
+      if (!ackReceived) { // app tab didn't answer (e.g. it was reloaded) → fall back to reopening the app
+        if (appUrl) {
+          var q = new URLSearchParams(Object.assign({ code: code }, passThrough));
+          location.replace(appUrl + '?' + q.toString());
+        } else { done = false; }
+        return;
+      }
+      window.close();
+      // Some browsers refuse to close the tab: tell the user to switch back
+      setTimeout(function () {
+        setMsg('อ่านได้: ' + code + ' — ส่งเข้าแอปแล้ว ปิดแท็บนี้แล้วกลับไปที่แท็บของแอปได้เลย');
+        // the X button already switches back to the app tab
+      }, 400);
+    }, 700);
+    return true;
+  }
+
   // ---- Live camera ----
   var stream = null, raf = null, detector = null, busy = false, last = 0, pass = 0;
   var canvas = document.createElement('canvas');
   var ctx = canvas.getContext('2d', { willReadFrequently: true });
 
   function stop() {
+    $('frame').classList.remove('live');
     if (raf) cancelAnimationFrame(raf);
     raf = null;
     if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
@@ -212,6 +281,7 @@
 
   async function start() {
     $('startPanel').style.display = 'none';
+    $('frame').classList.remove('found');
     setMsg('กำลังเปิดกล้อง…');
     if (inApp) {
       showStart('หน้านี้เปิดอยู่ในแอป ' + inApp + ' ซึ่งไม่อนุญาตให้ใช้กล้องแบบสด — กรุณาเปิดใน Safari หรือ Chrome (แตะ ⋯ แล้วเลือก "เปิดในเบราว์เซอร์") หรือใช้ "ถ่ายภาพแทน"');
@@ -246,6 +316,7 @@
         setMsg('โหลดตัวอ่าน QR ไม่สำเร็จ (อินเทอร์เน็ต?) กรุณารีเฟรชหน้า หรือใช้ "พิมพ์รหัส"', true);
       } else {
         setMsg('เล็ง QR Code ให้อยู่ในกรอบ ระบบจะอ่านอัตโนมัติ');
+        $('frame').classList.add('live');
       }
       raf = requestAnimationFrame(tick);
     } catch (err) {
@@ -325,7 +396,7 @@
     if (!validApp(u)) { setMsg('ลิงก์ไม่ถูกต้อง — ต้องเป็นลิงก์ script.google.com ที่ลงท้ายด้วย /exec', true); return; }
     appUrl = u;
     try { localStorage.setItem(STORE_KEY, u); } catch (e) {}
-    backLink.href = u; backLink.style.visibility = 'visible';
+    backLink.href = u;
     $('appSetup').classList.remove('show');
     if (pendingCode) finish(pendingCode); else setMsg('บันทึกลิงก์แอปแล้ว');
   });
@@ -351,6 +422,7 @@
   // otherwise wait for the "เริ่มสแกน" tap.
   diag();
   if (params.get('app') || params.get('t')) start(); // opened from the app's scan button
+  else $('startPanel').style.display = 'flex';        // opened directly: wait for a tap
 })();
 </script>
 </body>
