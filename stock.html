@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>สแกน QR · Stock วัสดุ</title>
+<!--
+  Live QR scanner for the "ระบบจัดการ Stock วัสดุ" Apps Script app.
+  Why this page exists: the Apps Script web app runs inside a Google iframe
+  where many phone browsers block live camera access. This page runs
+  top-level on GitHub Pages (HTTPS), so the live camera always works.
+
+  Flow:  app  →  stock.html?app=<APP /exec URL>&t=IN|OUT&ss=<substock>
+         scan →  <APP URL>?code=<material code>&t=..&ss=..   (back to the app)
+
+  Opening this page directly (bookmark / home-screen icon) also works:
+  it remembers the last app URL it was opened from, or uses DEFAULT_APP_URL.
+  Nothing is uploaded — frames are decoded on the phone only.
+-->
+<style>
+  :root { --primary: #db0862; --primary-2: #f51b70; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #000; color: #fff;
+    font-family: 'Sarabun', -apple-system, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+  body { display: flex; flex-direction: column; min-height: 100dvh; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 10px;
+    padding: calc(12px + env(safe-area-inset-top)) 16px 12px; background: rgba(0,0,0,.6); z-index: 3; }
+  header a { color: #fff; text-decoration: none; font-size: 15px; font-weight: 600;
+    padding: 8px 12px; border-radius: 12px; background: rgba(255,255,255,.14); }
+  header h1 { flex: 1; margin: 0; font-size: 17px; font-weight: 700; text-align: center; }
+  .spacer { width: 64px; }
+  .stage { position: relative; flex: 1; overflow: hidden; }
+  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .frame { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .frame span { position: relative; width: min(70vw, 300px); aspect-ratio: 1; border-radius: 22px;
+    border: 3px solid rgba(255,255,255,.95); box-shadow: 0 0 0 9999px rgba(0,0,0,.45); }
+  .frame span::after { content: ''; position: absolute; left: 8%; right: 8%; height: 2px; top: 6%;
+    background: var(--primary-2); box-shadow: 0 0 12px var(--primary-2); animation: sweep 1.8s ease-in-out infinite; }
+  @keyframes sweep { 0%,100% { top: 6%; } 50% { top: 94%; } }
+  .frame.found span { border-color: #4ade80; }
+  .msg { position: absolute; left: 16px; right: 16px; bottom: 18px; text-align: center; font-size: 15px; font-weight: 600;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8); line-height: 1.5; }
+  .start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 24px; text-align: center; background: #111; z-index: 2; }
+  .start p { margin: 0; color: #cfcfd4; font-size: 14.5px; line-height: 1.6; max-width: 340px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 12px 22px;
+    border-radius: 26px; border: none; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer;
+    background: var(--primary); color: #fff; text-decoration: none; }
+  .btn.ghost { background: rgba(255,255,255,.14); }
+  .btn:active { transform: scale(.97); }
+  footer { display: flex; gap: 10px; padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); background: rgba(0,0,0,.6); z-index: 3; }
+  footer .btn { flex: 1; font-size: 15px; min-height: 46px; padding: 10px 12px; }
+  .manual { display: none; gap: 8px; padding: 0 16px 12px; background: rgba(0,0,0,.6); }
+  .manual.show { display: flex; }
+  .manual input { flex: 1; min-width: 0; min-height: 46px; border-radius: 14px; border: 1px solid #555; background: #1c1c1f;
+    color: #fff; padding: 0 14px; font: inherit; font-size: 16px; }
+  .err { color: #fca5a5; }
+</style>
+</head>
+<body>
+<header>
+  <a id="backLink" href="#">‹ กลับ</a>
+  <h1>สแกน QR วัสดุ</h1>
+  <span class="spacer"></span>
+</header>
+
+<div class="stage">
+  <video id="video" playsinline muted autoplay></video>
+  <div class="frame" id="frame"><span></span></div>
+  <div class="msg" id="msg">เล็ง QR Code ให้อยู่ในกรอบ ระบบจะอ่านอัตโนมัติ</div>
+  <div class="start" id="startPanel">
+    <p id="startText">แตะ "เริ่มสแกน" แล้วอนุญาตให้ใช้กล้อง<br>ไม่มีการบันทึกหรือส่งภาพออกจากโทรศัพท์</p>
+    <button class="btn" id="startBtn" type="button">เริ่มสแกน</button>
+  </div>
+</div>
+
+<div class="manual" id="manual">
+  <input id="manualCode" type="text" placeholder="พิมพ์รหัสวัสดุ" autocomplete="off">
+  <button class="btn" id="manualGo" type="button">ตกลง</button>
+</div>
+<footer>
+  <button class="btn ghost" id="photoBtn" type="button">ถ่ายภาพแทน</button>
+  <button class="btn ghost" id="manualBtn" type="button">พิมพ์รหัส</button>
+</footer>
+<input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
+
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+(function () {
+  // Optional: put your Apps Script /exec URL here so the page also works when
+  // opened directly before it has ever been opened from the app.
+  var DEFAULT_APP_URL = '';
+
+  // Only ever send people back to a Google Apps Script web app (no open redirect).
+  var APP_RE = /^https:\/\/script\.google\.com\/(macros|a\/macros\/[^\/?#]+)\/s\/[\w-]+\/(exec|dev)$/;
+  var STORE_KEY = 'stockScannerAppUrl';
+  var params = new URLSearchParams(location.search);
+
+  function validApp(u) { return typeof u === 'string' && APP_RE.test(u); }
+  var appUrl = params.get('app');
+  try {
+    if (validApp(appUrl)) localStorage.setItem(STORE_KEY, appUrl);
+    else appUrl = localStorage.getItem(STORE_KEY) || DEFAULT_APP_URL;
+  } catch (e) { if (!validApp(appUrl)) appUrl = DEFAULT_APP_URL; }
+  if (!validApp(appUrl)) appUrl = '';
+
+  // Extra values handed through the round trip (entry type, sub-stock)
+  var passThrough = {};
+  ['t', 'ss'].forEach(function (k) { var v = params.get(k); if (v) passThrough[k] = v.slice(0, 40); });
+
+  var $ = function (id) { return document.getElementById(id); };
+  var video = $('video'), msg = $('msg');
+  var backLink = $('backLink');
+  if (appUrl) backLink.href = appUrl; else backLink.style.visibility = 'hidden';
+
+  function setMsg(text, isErr) { msg.textContent = text; msg.className = 'msg' + (isErr ? ' err' : ''); }
+
+  // New labels hold a full app link (…/exec?code=XXX); old labels hold just the code.
+  function extractCode(raw) {
+    var s = String(raw || '').trim();
+    var m = s.match(/[?&]code=([^&#]+)/);
+    if (m) { try { return decodeURIComponent(m[1].replace(/\+/g, ' ')).trim(); } catch (e) { return m[1].trim(); } }
+    return s;
+  }
+
+  var done = false;
+  function finish(raw) {
+    if (done) return;
+    var code = extractCode(raw);
+    if (!code) return;
+    done = true;
+    stop();
+    $('frame').classList.add('found');
+    if (navigator.vibrate) navigator.vibrate(80);
+    if (!appUrl) {
+      setMsg('อ่านได้: ' + code + ' — แต่ยังไม่รู้ลิงก์ของแอป กรุณาเปิดหน้านี้จากปุ่มสแกนในแอป', true);
+      done = false;
+      return;
+    }
+    var q = new URLSearchParams(Object.assign({ code: code }, passThrough));
+    setMsg('อ่านได้: ' + code + ' — กำลังกลับไปที่แอป…');
+    location.replace(appUrl + '?' + q.toString());
+  }
+
+  // ---- Live camera ----
+  var stream = null, raf = null, detector = null, busy = false, last = 0;
+  var canvas = document.createElement('canvas');
+  var ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = null;
+  }
+
+  async function start() {
+    $('startPanel').style.display = 'none';
+    setMsg('กำลังเปิดกล้อง…');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showStart('เบราว์เซอร์นี้เปิดกล้องแบบสดไม่ได้ กรุณาใช้ "ถ่ายภาพแทน" หรือ "พิมพ์รหัส"');
+      return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      video.srcObject = stream;
+      await video.play();
+      if (!detector && 'BarcodeDetector' in window) {
+        try {
+          var f = await BarcodeDetector.getSupportedFormats();
+          if (f.indexOf('qr_code') > -1) detector = new BarcodeDetector({ formats: ['qr_code'] });
+        } catch (e) { detector = null; }
+      }
+      setMsg('เล็ง QR Code ให้อยู่ในกรอบ ระบบจะอ่านอัตโนมัติ');
+      raf = requestAnimationFrame(tick);
+    } catch (err) {
+      stop();
+      var denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      showStart(denied
+        ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง — เปิดสิทธิ์กล้องให้เว็บนี้ในการตั้งค่าเบราว์เซอร์ แล้วกด "ลองอีกครั้ง"'
+        : 'เปิดกล้องไม่สำเร็จ กรุณากด "ลองอีกครั้ง" หรือใช้ "ถ่ายภาพแทน"');
+    }
+  }
+  function showStart(text) {
+    $('startText').textContent = text;
+    $('startBtn').textContent = 'ลองอีกครั้ง';
+    $('startPanel').style.display = 'flex';
+  }
+
+  async function tick(ts) {
+    if (!stream) return;
+    raf = requestAnimationFrame(tick);
+    if (busy || ts - last < 120) return;
+    last = ts;
+    if (video.readyState < 2 || !video.videoWidth) return;
+    busy = true;
+    try {
+      var code = null;
+      if (detector) {
+        var found = await detector.detect(video);
+        if (found && found.length) code = found[0].rawValue;
+      } else if (window.jsQR) {
+        var vw = video.videoWidth, vh = video.videoHeight;
+        var side = Math.min(vw, vh) * 0.8, sx = (vw - side) / 2, sy = (vh - side) / 2;
+        var size = Math.min(480, Math.round(side));
+        canvas.width = size; canvas.height = size;
+        ctx.drawImage(video, sx, sy, side, side, 0, 0, size, size);
+        var img = ctx.getImageData(0, 0, size, size);
+        var r = jsQR(img.data, size, size, { inversionAttempts: 'dontInvert' });
+        if (r && r.data) code = r.data;
+      }
+      if (code) finish(code);
+    } catch (e) { /* skip frame */ }
+    busy = false;
+  }
+
+  // ---- Photo fallback ----
+  function decodeFile(file) {
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var img = new Image();
+      img.onload = function () {
+        var max = 1000, w = img.width, h = img.height;
+        if (w > max || h > max) { if (w >= h) { h = Math.round(h * max / w); w = max; } else { w = Math.round(w * max / h); h = max; } }
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(img, 0, 0, w, h);
+        var r = window.jsQR ? jsQR(ctx.getImageData(0, 0, w, h).data, w, h) : null;
+        if (r && r.data) finish(r.data);
+        else setMsg('ไม่พบ QR Code ในภาพ กรุณาถ่ายใหม่ให้ QR อยู่กลางภาพและชัด', true);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  $('startBtn').addEventListener('click', start);
+  $('photoBtn').addEventListener('click', function () { $('photoInput').click(); });
+  $('photoInput').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) { stop(); decodeFile(f); }
+  });
+  $('manualBtn').addEventListener('click', function () {
+    $('manual').classList.toggle('show');
+    if ($('manual').classList.contains('show')) $('manualCode').focus();
+  });
+  $('manualGo').addEventListener('click', function () { finish($('manualCode').value); });
+  $('manualCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') finish($('manualCode').value); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) stop();
+    else if (!done && $('startPanel').style.display === 'none' && !stream) start();
+  });
+
+  // Start right away when opened from the app (a tap just happened there);
+  // otherwise wait for the "เริ่มสแกน" tap.
+  if (params.get('app')) start();
+})();
+</script>
+</body>
+</html>
