@@ -80,6 +80,14 @@
   </div>
 </div>
 
+<div class="manual" id="appSetup" style="flex-direction:column;">
+  <div style="font-size:14px;line-height:1.5;color:#e5e5ea;">ตั้งลิงก์แอปครั้งแรก: เปิดแอปใน Safari/Chrome แล้วคัดลอกลิงก์จากช่องที่อยู่ (ลงท้ายด้วย <b>/exec</b>) มาวางที่นี่ — ระบบจะจำไว้ในเครื่องนี้</div>
+  <div style="display:flex;gap:8px;">
+    <input id="appUrlInput" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+    <button class="btn" id="appUrlSave" type="button">บันทึก</button>
+  </div>
+  <div class="diag" id="diag2"></div>
+</div>
 <div class="manual" id="manual">
   <input id="manualCode" type="text" placeholder="พิมพ์รหัสวัสดุ" autocomplete="off">
   <button class="btn" id="manualGo" type="button">ตกลง</button>
@@ -96,15 +104,18 @@
 (function () {
   // Optional: put your Apps Script /exec URL here so the page also works when
   // opened directly before it has ever been opened from the app.
-  var DEFAULT_APP_URL = '';
+  var DEFAULT_APP_URL = 'https://script.google.com/macros/s/AKfycbz2yHbfUdpSgo0iW30sAhB22MshfEwja916TtQooon6yKa3b_CjUNmMFR1AyiiSi2mY/exec';
 
   // Only ever send people back to a Google Apps Script web app (no open redirect).
-  var APP_RE = /^https:\/\/script\.google\.com\/(macros|a\/macros\/[^\/?#]+)\/s\/[\w-]+\/(exec|dev)$/;
+  var APP_RE = /^https:\/\/script\.google\.com\/(?:[^?#]*\/)?macros\/(?:[^\/?#]+\/)?s\/[\w-]+\/(?:exec|dev)$/;
   var STORE_KEY = 'stockScannerAppUrl';
   var params = new URLSearchParams(location.search);
 
+  // Normalise: drop any ?query/#hash and trailing slash someone may paste along
+  function cleanApp(u) { return typeof u === 'string' ? u.trim().split(/[?#]/)[0].replace(/\/+$/, '') : u; }
   function validApp(u) { return typeof u === 'string' && APP_RE.test(u); }
-  var appUrl = params.get('app');
+  var rawAppParam = params.get('app');
+  var appUrl = cleanApp(rawAppParam);
   try {
     if (validApp(appUrl)) localStorage.setItem(STORE_KEY, appUrl);
     else appUrl = localStorage.getItem(STORE_KEY) || DEFAULT_APP_URL;
@@ -131,8 +142,9 @@
     : /TikTok|musical_ly|Bytedance/i.test(ua) ? 'TikTok' : '';
   var lastError = '';
   function diag() {
-    $('diag').textContent = [
+    $('diag').textContent = $('diag2').textContent = [
       inApp ? 'เปิดอยู่ในแอป ' + inApp : '',
+      'app=' + (appUrl ? 'ok' : (rawAppParam ? 'rejected(' + rawAppParam.slice(0, 60) + ')' : 'none')),
       'secure=' + (window.isSecureContext ? 'yes' : 'no'),
       'camera API=' + (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? 'yes' : 'no'),
       'decoder=' + ('BarcodeDetector' in window ? 'native' : (window.jsQR ? 'jsQR' : 'none')),
@@ -164,7 +176,7 @@
     return s;
   }
 
-  var done = false;
+  var done = false, pendingCode = null;
   function finish(raw) {
     if (done) return;
     var code = extractCode(raw);
@@ -174,7 +186,10 @@
     $('frame').classList.add('found');
     if (navigator.vibrate) navigator.vibrate(80);
     if (!appUrl) {
-      setMsg('อ่านได้: ' + code + ' — แต่ยังไม่รู้ลิงก์ของแอป กรุณาเปิดหน้านี้จากปุ่มสแกนในแอป', true);
+      pendingCode = code;
+      setMsg('อ่านได้: ' + code + ' — ยังไม่รู้ลิงก์ของแอป กรุณาวางลิงก์แอปด้านล่างครั้งเดียว แล้วกด "บันทึก"', true);
+      $('appSetup').classList.add('show');
+      diag();
       done = false;
       return;
     }
@@ -305,6 +320,15 @@
     reader.readAsDataURL(file);
   }
 
+  $('appUrlSave').addEventListener('click', function () {
+    var u = cleanApp($('appUrlInput').value);
+    if (!validApp(u)) { setMsg('ลิงก์ไม่ถูกต้อง — ต้องเป็นลิงก์ script.google.com ที่ลงท้ายด้วย /exec', true); return; }
+    appUrl = u;
+    try { localStorage.setItem(STORE_KEY, u); } catch (e) {}
+    backLink.href = u; backLink.style.visibility = 'visible';
+    $('appSetup').classList.remove('show');
+    if (pendingCode) finish(pendingCode); else setMsg('บันทึกลิงก์แอปแล้ว');
+  });
   $('startBtn').addEventListener('click', start);
   $('photoBtn').addEventListener('click', function () { $('photoInput').click(); });
   $('photoInput').addEventListener('change', function (e) {
