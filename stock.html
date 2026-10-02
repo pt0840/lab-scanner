@@ -326,7 +326,7 @@
   // Start right away when opened from the app (a tap just happened there);
   // otherwise wait for the "เริ่มสแกน" tap.
   diag();
-  if (params.get('app')) start();
+  if (params.get('app') || params.get('t')) start(); // opened from the app's scan button
 })();
 </script>
 </body>
