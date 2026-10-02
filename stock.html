@@ -57,6 +57,8 @@
   .manual input { flex: 1; min-width: 0; min-height: 46px; border-radius: 14px; border: 1px solid #555; background: #1c1c1f;
     color: #fff; padding: 0 14px; font: inherit; font-size: 16px; }
   .err { color: #fca5a5; }
+  .diag { margin-top: 6px; font-size: 11.5px; color: #8b8b93; word-break: break-all; }
+  .start .btn.ghost { min-height: 44px; font-size: 15px; }
 </style>
 </head>
 <body>
@@ -73,6 +75,8 @@
   <div class="start" id="startPanel">
     <p id="startText">แตะ "เริ่มสแกน" แล้วอนุญาตให้ใช้กล้อง<br>ไม่มีการบันทึกหรือส่งภาพออกจากโทรศัพท์</p>
     <button class="btn" id="startBtn" type="button">เริ่มสแกน</button>
+    <button class="btn ghost" id="copyBtn" type="button" style="display:none;">คัดลอกลิงก์ไปเปิดใน Safari / Chrome</button>
+    <div class="diag" id="diag"></div>
   </div>
 </div>
 
@@ -87,6 +91,7 @@
 <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>window.jsQR || document.write('<script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"><\/script>');</script>
 <script>
 (function () {
   // Optional: put your Apps Script /exec URL here so the page also works when
@@ -117,6 +122,40 @@
 
   function setMsg(text, isErr) { msg.textContent = text; msg.className = 'msg' + (isErr ? ' err' : ''); }
 
+  // ---- Environment checks (shown on screen to make problems easy to report) ----
+  var ua = navigator.userAgent || '';
+  var inApp = /Line\//i.test(ua) ? 'LINE'
+    : /FBAN|FBAV|FB_IAB|Messenger/i.test(ua) ? 'Facebook/Messenger'
+    : /Instagram/i.test(ua) ? 'Instagram'
+    : /MicroMessenger/i.test(ua) ? 'WeChat'
+    : /TikTok|musical_ly|Bytedance/i.test(ua) ? 'TikTok' : '';
+  var lastError = '';
+  function diag() {
+    $('diag').textContent = [
+      inApp ? 'เปิดอยู่ในแอป ' + inApp : '',
+      'secure=' + (window.isSecureContext ? 'yes' : 'no'),
+      'camera API=' + (navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? 'yes' : 'no'),
+      'decoder=' + ('BarcodeDetector' in window ? 'native' : (window.jsQR ? 'jsQR' : 'none')),
+      lastError ? 'error=' + lastError : ''
+    ].filter(Boolean).join(' · ');
+  }
+  // LINE supports reopening a link in the phone's default browser via this flag.
+  if (inApp === 'LINE' && params.get('openExternalBrowser') !== '1') {
+    params.set('openExternalBrowser', '1');
+    location.replace(location.pathname + '?' + params.toString());
+    return;
+  }
+  function offerCopyLink() {
+    var btn = $('copyBtn');
+    btn.style.display = 'inline-flex';
+    btn.onclick = function () {
+      var url = location.href;
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+        .then(function () { btn.textContent = 'คัดลอกแล้ว — วางในช่องที่อยู่ของ Safari / Chrome'; })
+        .catch(function () { window.prompt('คัดลอกลิงก์นี้ไปเปิดใน Safari / Chrome', url); });
+    };
+  }
+
   // New labels hold a full app link (…/exec?code=XXX); old labels hold just the code.
   function extractCode(raw) {
     var s = String(raw || '').trim();
@@ -145,7 +184,7 @@
   }
 
   // ---- Live camera ----
-  var stream = null, raf = null, detector = null, busy = false, last = 0;
+  var stream = null, raf = null, detector = null, busy = false, last = 0, pass = 0;
   var canvas = document.createElement('canvas');
   var ctx = canvas.getContext('2d', { willReadFrequently: true });
 
@@ -159,15 +198,26 @@
   async function start() {
     $('startPanel').style.display = 'none';
     setMsg('กำลังเปิดกล้อง…');
+    if (inApp) {
+      showStart('หน้านี้เปิดอยู่ในแอป ' + inApp + ' ซึ่งไม่อนุญาตให้ใช้กล้องแบบสด — กรุณาเปิดใน Safari หรือ Chrome (แตะ ⋯ แล้วเลือก "เปิดในเบราว์เซอร์") หรือใช้ "ถ่ายภาพแทน"');
+      offerCopyLink();
+      return;
+    }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      showStart('เบราว์เซอร์นี้เปิดกล้องแบบสดไม่ได้ กรุณาใช้ "ถ่ายภาพแทน" หรือ "พิมพ์รหัส"');
+      showStart('เบราว์เซอร์นี้เปิดกล้องแบบสดไม่ได้ กรุณาเปิดใน Safari หรือ Chrome หรือใช้ "ถ่ายภาพแทน"');
+      offerCopyLink();
       return;
     }
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
-      });
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+      } catch (e1) {
+        if (e1 && (e1.name === 'NotAllowedError' || e1.name === 'SecurityError')) throw e1;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true }); // simplest request
+      }
       video.srcObject = stream;
       await video.play();
       if (!detector && 'BarcodeDetector' in window) {
@@ -176,17 +226,29 @@
           if (f.indexOf('qr_code') > -1) detector = new BarcodeDetector({ formats: ['qr_code'] });
         } catch (e) { detector = null; }
       }
-      setMsg('เล็ง QR Code ให้อยู่ในกรอบ ระบบจะอ่านอัตโนมัติ');
+      if (!detector && !window.jsQR) {
+        lastError = 'no QR decoder loaded';
+        setMsg('โหลดตัวอ่าน QR ไม่สำเร็จ (อินเทอร์เน็ต?) กรุณารีเฟรชหน้า หรือใช้ "พิมพ์รหัส"', true);
+      } else {
+        setMsg('เล็ง QR Code ให้อยู่ในกรอบ ระบบจะอ่านอัตโนมัติ');
+      }
       raf = requestAnimationFrame(tick);
     } catch (err) {
       stop();
-      var denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
-      showStart(denied
-        ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง — เปิดสิทธิ์กล้องให้เว็บนี้ในการตั้งค่าเบราว์เซอร์ แล้วกด "ลองอีกครั้ง"'
-        : 'เปิดกล้องไม่สำเร็จ กรุณากด "ลองอีกครั้ง" หรือใช้ "ถ่ายภาพแทน"');
+      lastError = (err && (err.name + (err.message ? ': ' + err.message : ''))) || String(err);
+      var name = err && err.name;
+      showStart(
+        name === 'NotAllowedError' || name === 'SecurityError'
+          ? 'ไม่ได้รับอนุญาตให้ใช้กล้อง — iPhone: ตั้งค่า › Safari › กล้อง › อนุญาต / Android: แตะไอคอนแม่กุญแจข้างลิงก์ › สิทธิ์ › กล้อง › อนุญาต แล้วกด "ลองอีกครั้ง"'
+        : name === 'NotReadableError' || name === 'AbortError'
+          ? 'กล้องถูกใช้งานโดยแอปอื่นอยู่ — ปิดแอปกล้อง/แท็บอื่นที่ใช้กล้อง แล้วกด "ลองอีกครั้ง"'
+        : name === 'NotFoundError' || name === 'OverconstrainedError'
+          ? 'ไม่พบกล้องหลังที่ใช้ได้ กด "ลองอีกครั้ง" หรือใช้ "ถ่ายภาพแทน"'
+          : 'เปิดกล้องไม่สำเร็จ กรุณากด "ลองอีกครั้ง" หรือใช้ "ถ่ายภาพแทน"');
     }
   }
   function showStart(text) {
+    diag();
     $('startText').textContent = text;
     $('startBtn').textContent = 'ลองอีกครั้ง';
     $('startPanel').style.display = 'flex';
@@ -202,16 +264,21 @@
     try {
       var code = null;
       if (detector) {
-        var found = await detector.detect(video);
-        if (found && found.length) code = found[0].rawValue;
+        try {
+          var found = await detector.detect(video);
+          if (found && found.length) code = found[0].rawValue;
+        } catch (de) { if (window.jsQR) detector = null; }
       } else if (window.jsQR) {
-        var vw = video.videoWidth, vh = video.videoHeight;
-        var side = Math.min(vw, vh) * 0.8, sx = (vw - side) / 2, sy = (vh - side) / 2;
-        var size = Math.min(480, Math.round(side));
-        canvas.width = size; canvas.height = size;
-        ctx.drawImage(video, sx, sy, side, side, 0, 0, size, size);
-        var img = ctx.getImageData(0, 0, size, size);
-        var r = jsQR(img.data, size, size, { inversionAttempts: 'dontInvert' });
+        // Alternate between a centre crop (fast, ignores clutter) and the whole frame
+        pass++;
+        var vw = video.videoWidth, vh = video.videoHeight, sw, sh, sx, sy;
+        if (pass % 2) { sw = sh = Math.min(vw, vh) * 0.8; sx = (vw - sw) / 2; sy = (vh - sh) / 2; }
+        else { sw = vw; sh = vh; sx = 0; sy = 0; }
+        var scale = Math.min(1, 640 / Math.max(sw, sh));
+        var w = Math.round(sw * scale), h = Math.round(sh * scale);
+        canvas.width = w; canvas.height = h;
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+        var r = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: pass % 4 === 0 ? 'attemptBoth' : 'dontInvert' });
         if (r && r.data) code = r.data;
       }
       if (code) finish(code);
@@ -258,6 +325,7 @@
 
   // Start right away when opened from the app (a tap just happened there);
   // otherwise wait for the "เริ่มสแกน" tap.
+  diag();
   if (params.get('app')) start();
 })();
 </script>
