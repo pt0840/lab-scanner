@@ -260,7 +260,7 @@ function pickPhoto(){ close(); $('#file').click(); }
   if(APP){ ['#back','#back2'].forEach(s => { $(s).hidden = false; $(s).href = APP; }); }
   $('#start').onclick = () => open();
   $('#retry').onclick = () => { $('#fail').hidden = true; $('#intro').hidden = false; open(); };
-  $('#close').onclick = close;
+  $('#close').onclick = () => { if(APP){ close(); location.href = APP; } else close(); };   // ✕ = กลับไปที่แอป
   ['#photo','#photo2','#photo3'].forEach(s => $(s).onclick = pickPhoto);
   $('#torch').onclick = async () => { try{ SC.torch = !SC.torch; await SC.track.applyConstraints({ advanced:[{ torch:SC.torch }] }); }catch(e){ SC.torch = false; } $('#torch').classList.toggle('on', SC.torch); };
   $('#switch').onclick = () => { if(SC.devices.length > 1){ SC.idx = (SC.idx + 1) % SC.devices.length; open(SC.devices[SC.idx].deviceId); } };
@@ -269,7 +269,10 @@ function pickPhoto(){ close(); $('#file').click(); }
     try{ const t = await decodePhoto(f); if(!t){ alert('อ่าน QR ในภาพไม่ได้ — ถ่ายให้ใกล้ ชัด และไม่สะท้อนแสง'); return; } found(t); }catch(err){ alert(err.message || err); }
   };
   document.addEventListener('visibilitychange', () => { if(!$('#scanner').hidden){ if(document.hidden) stop(); else open(); } });
-  if((await permState()) === 'granted' || store.get('scan_cam') === '1') open();   // เคยอนุญาตแล้ว → เปิดกล้องทันที
+  // กลับมาหน้านี้ด้วยปุ่มย้อนกลับ (หน้าที่ถูกเก็บไว้ใน cache) → เปิดกล้องใหม่
+  window.addEventListener('pageshow', e => { if(e.persisted) open(); });
+  // เปิดกล้องทันทีที่เข้าหน้า (iPhone/Android จะแสดงกล่องขอสิทธิ์เอง) — ถ้าไม่ได้ จะแสดงหน้าวิธีแก้
+  open();
 })();
 </script>
 </body>
