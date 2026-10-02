@@ -157,16 +157,25 @@
   // Extra values handed through the round trip (entry type, sub-stock)
   var passThrough = {};
   ['t', 'ss'].forEach(function (k) { var v = params.get(k); if (v) passThrough[k] = v.slice(0, 40); });
+  var scanFor = params.get('for') === 'material' ? 'material' : 'entry';
 
   var $ = function (id) { return document.getElementById(id); };
   var video = $('video'), msg = $('msg');
   var backLink = $('backLink');
   if (appUrl) backLink.href = appUrl;
-  backLink.addEventListener('click', function (e) {
+  // ✕ : back to the app's main page. If this page was opened as its own tab
+  // it tries to close itself first (iPhone Safari often refuses), then falls
+  // back to opening the app here.
+  function goToApp(query) {
+    stop();
     var op = null; try { op = window.opener; } catch (x) {}
-    if (op && !op.closed) { e.preventDefault(); stop(); try { op.focus(); } catch (x) {} window.close(); return; }
-    if (!appUrl) { e.preventDefault(); stop(); if (history.length > 1) history.back(); }
-  });
+    if (op && !op.closed) { try { op.focus(); } catch (x) {} try { window.close(); } catch (x) {} }
+    setTimeout(function () {
+      if (appUrl) location.replace(appUrl + (query ? '?' + query : ''));
+      else if (history.length > 1) history.back();
+    }, op ? 350 : 0);
+  }
+  backLink.addEventListener('click', function (e) { e.preventDefault(); goToApp(''); });
 
   function setMsg(text, isErr) { msg.textContent = text; msg.className = 'msg' + (isErr ? ' err' : (/^อ่านได้/.test(text) ? ' ok' : '')); }
 
@@ -246,7 +255,7 @@
     var op = null;
     try { op = window.opener; } catch (e) { op = null; }
     if (!op || op.closed) return false;
-    try { op.postMessage({ type: 'stock-scan', code: code }, '*'); } catch (e) { return false; }
+    try { op.postMessage({ type: 'stock-scan', code: code, target: scanFor }, '*'); } catch (e) { return false; }
     setMsg('อ่านได้: ' + code + ' — ส่งกลับไปที่แอปแล้ว');
     setTimeout(function () {
       if (!ackReceived) { // app tab didn't answer (e.g. it was reloaded) → fall back to reopening the app
@@ -256,11 +265,17 @@
         } else { done = false; }
         return;
       }
-      window.close();
-      // Some browsers refuse to close the tab: tell the user to switch back
+      try { op.focus(); } catch (x) {}
+      try { window.close(); } catch (x) {}
+      // Browser refused to close the tab (iPhone): the code is already in the
+      // app tab — for the entry form, continue in the app right here.
       setTimeout(function () {
-        setMsg('อ่านได้: ' + code + ' — ส่งเข้าแอปแล้ว ปิดแท็บนี้แล้วกลับไปที่แท็บของแอปได้เลย');
-        // the X button already switches back to the app tab
+        if (scanFor === 'entry' && appUrl) {
+          var q = new URLSearchParams(Object.assign({ code: code }, passThrough));
+          location.replace(appUrl + '?' + q.toString());
+        } else {
+          setMsg('อ่านได้: ' + code + ' — ส่งเข้าแอปแล้ว กด ✕ เพื่อกลับไปที่แอป');
+        }
       }, 400);
     }, 700);
     return true;
